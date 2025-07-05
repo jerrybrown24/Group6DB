@@ -1,4 +1,4 @@
-# ───────── VaporIQ Galaxy Dashboard • v10-fix ─────────
+# ───────── VaporIQ Galaxy Dashboard • v10-final ─────────
 import streamlit as st, pandas as pd, numpy as np
 import matplotlib.pyplot as plt, seaborn as sns, plotly.express as px
 from pathlib import Path
@@ -15,7 +15,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from mlxtend.frequent_patterns import apriori, association_rules
 
-# ╭─────────────────  THEME  ─────────────────╮
+# ╭──────────  THEME (galaxy + smoke + watermark)  ─────────╮
 st.set_page_config(page_title="VaporIQ Galaxy", layout="wide")
 with open("style.css") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
@@ -28,7 +28,6 @@ st.markdown(
     "style='position:fixed;bottom:15px;right:15px;width:110px;opacity:.8;z-index:1;'/>",
     unsafe_allow_html=True)
 
-# optional star-field
 star = Path("starfield.png")
 if star.exists():
     st.markdown(
@@ -38,42 +37,34 @@ if star.exists():
         background-size:600px;opacity:.35;animation:star 240s linear infinite}}
         @keyframes star{{0%{{transform:translate3d(0,0,0)}}100%{{transform:translate3d(-2000px,1500px,0)}}}}
         </style>""",
-        unsafe_allow_html=True,
-    )
+        unsafe_allow_html=True)
 
-# ╭─────────────────  DATA  ─────────────────╮
+# ╭──────────  DATA LOADER (weekly agg + ffill/bfill)  ─────────╮
 @st.cache_data
 def load_data():
-    users  = pd.read_csv("users_synthetic_enriched.csv")
-    trends = pd.read_csv("flavor_trends.csv")
+    users   = pd.read_csv("users_synthetic_enriched.csv")
+    trends  = pd.read_csv("flavor_trends.csv")
     trends["Date"] = pd.to_datetime(trends["Date"])
 
-    num_cols = [
-        "Age","SweetLike","MentholLike","PodsPerWeek",
-        "AvgSessionTimeMin","ReferralCount","ReorderRate","SubscriptionTenure",
-        "FlavourExplorationRate","NicotineToleranceLevel","AvgPodsPerOrder",
-        "SleepHours","StressLevelScale","FlavorBuzzScore","SocialMentions_30D"
-    ]
+    num_cols = ["Age","SweetLike","MentholLike","PodsPerWeek",
+                "AvgSessionTimeMin","ReferralCount","ReorderRate","SubscriptionTenure",
+                "FlavourExplorationRate","NicotineToleranceLevel","AvgPodsPerOrder",
+                "SleepHours","StressLevelScale","FlavorBuzzScore","SocialMentions_30D"]
     users[num_cols] = users[num_cols].apply(pd.to_numeric, errors="coerce")
 
-    # ─ weekly aggregation for four predictors ─
-    base_day = pd.Timestamp("2024-01-01")             # first Monday 2024
-    users["WeekStart"] = base_day + pd.to_timedelta(users.index // 500, unit="W")
+    # synthetic weekly stamp (500 users per week)
+    users["WeekStart"] = pd.Timestamp("2024-01-01") + pd.to_timedelta(users.index//500, unit="W")
 
-    weekly = (
-        users.groupby("WeekStart")[["PodsPerWeek","AvgPodsPerOrder",
-                                    "FlavorBuzzScore","SocialMentions_30D"]]
-        .mean()
-        .reset_index()
-        .rename(columns={"WeekStart":"Date"})
-    )
+    weekly = (users.groupby("WeekStart")[["PodsPerWeek","AvgPodsPerOrder",
+                                          "FlavorBuzzScore","SocialMentions_30D"]]
+              .mean()
+              .reset_index()
+              .rename(columns={"WeekStart":"Date"}))
 
-    trends_full = (
-        trends.merge(weekly, on="Date", how="left")
-              .sort_values("Date")
-              .fillna(method="ffill")      # forward-fill
-              .fillna(method="bfill")      # back-fill leading NaNs
-    )
+    trends_full = (trends.merge(weekly, on="Date", how="left")
+                          .sort_values("Date")
+                          .fillna(method="ffill")
+                          .fillna(method="bfill"))
 
     return users, trends_full
 
@@ -82,18 +73,18 @@ users_df, trends_df = load_data()
 core  = ["Age","SweetLike","MentholLike","PodsPerWeek"]
 extra = ["AvgSessionTimeMin","ReferralCount","ReorderRate","SubscriptionTenure",
          "FlavourExplorationRate","NicotineToleranceLevel","SleepHours","StressLevelScale"]
-all_numeric = core + extra
+all_num = core + extra
 
 if "Cluster" not in users_df.columns:
     users_df["Cluster"] = KMeans(4, random_state=42).fit_predict(
-        MinMaxScaler().fit_transform(users_df[all_numeric])
+        MinMaxScaler().fit_transform(users_df[all_num])
     )
 
-# ╭─────────────────  TABS  ─────────────────╮
+# ╭──────────  TABS  ─────────╮
 viz, taste_tab, forecast_tab, rules_tab = st.tabs(
     ["Data Visualization","TasteDNA","Forecasting","Micro-Batch"])
 
-# ╭──────────── 1. DATA-VIS ────────────╮
+# ╭───────── 1. DATA-VIS ─────────╮
 with viz:
     st.header("📊 Explorer")
     gsel = st.sidebar.multiselect("Gender", users_df["Gender"].unique(),
@@ -116,72 +107,89 @@ with viz:
 
     fig, ax = plt.subplots()
     sns.boxplot(data=df, x="PrimaryFlavourNote", y="ReorderRate", ax=ax)
-    ax.set_title("Reorder-Rate by Primary Flavour Note"); st.pyplot(fig); plt.close(fig)
+    ax.set_title("Reorder-Rate by Primary Flavour Note")
+    st.pyplot(fig); plt.close(fig)
 
-# ╭──────────── 2. TASTEDNA ────────────╮
+# ╭───────── 2. TASTEDNA ─────────╮
 with taste_tab:
     st.header("🔮 TasteDNA")
     mode = st.radio("Mode", ["Classification","Clustering"], horizontal=True)
 
     if mode=="Classification":
         algo = st.selectbox("Classifier",["KNN","Decision Tree","Random Forest","Gradient Boosting"])
-        X,y = users_df[all_numeric], users_df["SubscribeIntent"]
-        X_tr,X_te,y_tr,y_te = train_test_split(X,y,test_size=0.25,stratify=y,random_state=42)
+        X,y = users_df[all_num], users_df["SubscribeIntent"]
+        X_tr,X_te,y_tr,y_te = train_test_split(X,y,stratify=y,test_size=0.25,random_state=42)
         clf = {"KNN":KNeighborsClassifier(),
                "Decision Tree":DecisionTreeClassifier(random_state=42),
                "Random Forest":RandomForestClassifier(random_state=42),
                "Gradient Boosting":GradientBoostingClassifier(random_state=42)}[algo]
         y_pred = clf.fit(X_tr,y_tr).predict(X_te)
-        for name,metric in [("Precision",precision_score),("Recall",recall_score),
-                            ("Accuracy",accuracy_score),("F1",f1_score)]:
-            st.metric(name,f"{metric(y_te,y_pred):.2f}")
+        for lbl,f in [("Precision",precision_score),("Recall",recall_score),
+                      ("Accuracy",accuracy_score),("F1",f1_score)]:
+            st.metric(lbl, f"{f(y_te,y_pred):.2f}")
         fig, ax = plt.subplots()
         sns.heatmap(confusion_matrix(y_te,y_pred),annot=True,fmt="d",cmap="Blues",ax=ax)
         st.pyplot(fig); plt.close(fig)
 
     else:
         k = st.slider("k clusters",2,10,4)
-        scaled = MinMaxScaler().fit_transform(users_df[all_numeric])
+        scaled = MinMaxScaler().fit_transform(users_df[all_num])
         inert = [KMeans(i,random_state=42).fit(scaled).inertia_ for i in range(2,11)]
         fig, ax = plt.subplots(); ax.plot(range(2,11), inert, marker="o")
         ax.set_title("Elbow Curve"); st.pyplot(fig); plt.close(fig)
         km = KMeans(k,random_state=42).fit(scaled)
         users_df["Cluster"] = km.labels_
         st.metric("Silhouette",f"{silhouette_score(scaled, km.labels_):.3f}")
-        st.dataframe(users_df.groupby("Cluster")[all_numeric].mean().round(2))
+        st.dataframe(users_df.groupby("Cluster")[all_num].mean().round(2))
 
-# ╭──────────── 3. FORECASTING ────────────╮
+# ╭───────── 3. FORECASTING (bullet-proof) ─────────╮
 with forecast_tab:
     st.header("📈 Forecasting")
-    predictor = st.selectbox("Predictor",
-        ["PodsPerWeek","AvgPodsPerOrder","FlavorBuzzScore","SocialMentions_30D"])
-    reg_name  = st.selectbox("Regressor",
-        ["Linear","Ridge","Lasso","Decision Tree"])
+    predictor = st.selectbox("Predictor", ["PodsPerWeek","AvgPodsPerOrder",
+                                           "FlavorBuzzScore","SocialMentions_30D"])
+    reg_name  = st.selectbox("Regressor", ["Linear","Ridge","Lasso","Decision Tree"])
     reg = {"Linear":LinearRegression(),
            "Ridge":Ridge(),
            "Lasso":Lasso(alpha=0.01),
            "Decision Tree":DecisionTreeRegressor(max_depth=5,random_state=42)}[reg_name]
-    X = np.arange(len(trends_df)).reshape(-1,1)
-    y = trends_df[predictor].values
-    y = np.nan_to_num(y, nan=np.nanmean(y), posinf=np.nanmean(y), neginf=0.0)  # ← sanitize
-    cut = int(0.8*len(X))
-    reg.fit(X[:cut],y[:cut]); y_pred = reg.predict(X[cut:])
-    st.metric("R²",f"{r2_score(y[cut:],y_pred):.3f}")
-    st.metric("RMSE",f"{np.sqrt(mean_squared_error(y[cut:],y_pred)):.2f}")
-    fig, ax = plt.subplots()
-    ax.scatter(y[cut:],y_pred,alpha=.6); ax.plot([y.min(),y.max()],[y.min(),y.max()],'k--')
-    ax.set_xlabel("Actual"); ax.set_ylabel("Predicted"); st.pyplot(fig); plt.close(fig)
 
-# ╭──────────── 4. APRIORI ────────────╮
+    # clean timeline & target
+    X_time = np.arange(len(trends_df)).reshape(-1,1)
+    y_raw  = pd.to_numeric(trends_df[predictor], errors="coerce")
+
+    y_clean = (y_raw.interpolate("linear", limit_direction="both")
+                     .fillna(method="ffill")
+                     .fillna(method="bfill")
+                     .fillna(y_raw.median())
+                     .astype(float))
+    mask = np.isfinite(y_clean)
+    X_c  = X_time[mask]
+    y_c  = y_clean.values[mask]
+
+    cut = int(0.8*len(X_c))
+    reg.fit(X_c[:cut], y_c[:cut])
+    y_pred = reg.predict(X_c[cut:])
+
+    st.metric("R²",  f"{r2_score(y_c[cut:], y_pred):.3f}")
+    st.metric("RMSE",f"{np.sqrt(mean_squared_error(y_c[cut:], y_pred)):.2f}")
+
+    fig, ax = plt.subplots()
+    ax.scatter(y_c[cut:], y_pred, alpha=.6)
+    ax.plot([y_c.min(), y_c.max()], [y_c.min(), y_c.max()], 'k--')
+    ax.set_xlabel("Actual"); ax.set_ylabel("Predicted")
+    st.pyplot(fig); plt.close(fig)
+
+# ╭───────── 4. MICRO-BATCH / APRIORI ─────────╮
 with rules_tab:
     st.header("🧩 Micro-Batch & Drops")
-    sup = st.slider("Support",0.02,0.4,0.05,0.01)
-    conf= st.slider("Confidence",0.05,1.0,0.3,0.05)
+    sup  = st.slider("Support",0.02,0.4,0.05,0.01)
+    conf = st.slider("Confidence",0.05,1.0,0.3,0.05)
     basket = pd.concat([
         users_df["FlavourFamilies"].str.get_dummies(sep=",").astype(bool),
         pd.get_dummies(users_df["PurchaseChannel"], prefix="Chan").astype(bool),
-        pd.get_dummies(users_df["PrimaryFlavourNote"], prefix="Note").astype(bool)],axis=1)
-    rules = association_rules(apriori(basket,min_support=sup,use_colnames=True),
-                              metric="confidence",min_threshold=conf)
+        pd.get_dummies(users_df["PrimaryFlavourNote"], prefix="Note").astype(bool)], axis=1)
+
+    rules = association_rules(apriori(basket, min_support=sup, use_colnames=True),
+                              metric="confidence", min_threshold=conf)
     st.dataframe(rules.sort_values("confidence",ascending=False).head(10)
                  if not rules.empty else pd.DataFrame())
