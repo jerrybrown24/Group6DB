@@ -1,0 +1,14 @@
+
+body{
+  background: radial-gradient(ellipse at bottom,#1b2735 0%,#090a0f 100%);
+  color:#E0E0E0;font-family:'Inter',sans-serif;
+}
+@keyframes smokeDrift{0%{background-position:0 0;}100%{background-position:-2000px 0;}}
+.smoke-layer,.smoke-layer-2{position:fixed;top:0;left:0;width:100%;height:100%;
+background-repeat:repeat;pointer-events:none;z-index:-2;}
+.smoke-layer{background-image:url('https://raw.githubusercontent.com/rahulbhatia01/assets/main/smoke.png');
+opacity:0.3;animation:smokeDrift 90s linear infinite;}
+.smoke-layer-2{background-image:url('https://raw.githubusercontent.com/rahulbhatia01/assets/main/smoke_light.png');
+opacity:0.15;animation:smokeDrift 120s linear infinite reverse;}
+.stButton>button{border-radius:8px;padding:0.4rem 1rem;
+background-image:linear-gradient(90deg,#00c6ff 0%,#0072ff 100%);color:#fff;border:none;}
