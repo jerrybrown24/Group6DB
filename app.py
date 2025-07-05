@@ -28,14 +28,40 @@ with open("vape_watermark.png","rb") as f:
 
 # ╭─────────────────  DATA  ─────────────────╮
 @st.cache_data
+@st.cache_data
 def load_data():
-    users = pd.read_csv("users_synthetic_enriched.csv")
-    trends = pd.read_csv("flavor_trends.csv"); trends["Date"] = pd.to_datetime(trends["Date"])
+    # 1. read core files
+    users   = pd.read_csv("users_synthetic_enriched.csv")
+    trends  = pd.read_csv("flavor_trends.csv")
+    trends["Date"] = pd.to_datetime(trends["Date"])
+
+    # 2. ensure numeric dtypes
     num_cols = ["Age","SweetLike","MentholLike","PodsPerWeek","AvgSessionTimeMin",
                 "ReferralCount","ReorderRate","SubscriptionTenure","FlavourExplorationRate",
-                "NicotineToleranceLevel","AvgPodsPerOrder","SleepHours","StressLevelScale"]
+                "NicotineToleranceLevel","AvgPodsPerOrder","SleepHours","StressLevelScale",
+                "FlavorBuzzScore","SocialMentions_30D"]
     users[num_cols] = users[num_cols].apply(pd.to_numeric, errors="coerce")
-    return users, trends
+
+    # 3. give each user a synthetic "WeekStart" date  (monotonic → realistic spread)
+    base_day = pd.Timestamp("2023-01-02")                       # first Monday of 2023
+    users["WeekStart"] = base_day + pd.to_timedelta(users.index // 500, unit="W")
+    #   (500 users per week; adjust if you prefer a different cadence)
+
+    # 4. aggregate weekly metrics we want to forecast
+    weekly = (users.groupby("WeekStart")
+                    .agg(AvgPodsPerOrder   = ("AvgPodsPerOrder",   "mean"),
+                         FlavorBuzzScore   = ("FlavorBuzzScore",   "mean"),
+                         SocialMentions_30D= ("SocialMentions_30D","mean"))
+                    .reset_index()
+                    .rename(columns={"WeekStart": "Date"}))
+
+    # 5. merge into flavour-trend table
+    trends_full = trends.merge(weekly, on="Date", how="left") \
+                        .sort_values("Date") \
+                        .fillna(method="ffill")   # forward-fill gaps
+
+    return users, trends_full
+
 
 users_df, trends_df = load_data()
 
