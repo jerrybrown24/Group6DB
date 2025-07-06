@@ -1,15 +1,15 @@
 
-# VaporIQ Galaxy Dashboard – Integrated
+# VaporIQ Galaxy Dashboard v11
 
-Tabs:
-1. TasteDNA Personalization (classification & clustering)
-2. Flavor Forecasting (regression)
-3. Micro‑Batch & Limited Drops (Apriori explorer)
-
-Galaxy gradient with dual smoke layers & vape watermark.
-
-## Run
+## Setup
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+## Tabs
+1. Flavor Forecasting – weekly predictor regression & next‑hit flavour.
+2. TasteDNA – classification metrics + clustering personas.
+3. MoodSync – simple rule demo (stress / mood to flavour).
+4. Micro‑Batch – Apriori explorer for co‑preference rules.
+5. Compliance – country nicotine monitoring & taper CSV.
