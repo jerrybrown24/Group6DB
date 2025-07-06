@@ -6,3 +6,4 @@ scikit-learn
 mlxtend
 seaborn
 matplotlib
+statsmodels
